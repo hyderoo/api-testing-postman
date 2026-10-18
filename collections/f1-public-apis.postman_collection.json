@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "F1 Public APIs - QA Portfolio",
+    "description": "API test suite against two public Formula 1 APIs: Jolpica (Ergast-compatible, historical data) and OpenF1 (live/historical timing data). Covers functional assertions, dynamic data chaining, pagination, error handling and basic performance budgets. Built for practice on public data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "jolpicaBase",
+      "value": "https://api.jolpi.ca/ergast/f1"
+    },
+    {
+      "key": "openf1Base",
+      "value": "https://api.openf1.org/v1"
+    },
+    {
+      "key": "lastRaceSession",
+      "value": ""
+    },
+    {
+      "key": "pageOneDriver",
+      "value": ""
+    },
+    {
+      "key": "raceDriver",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Jolpica (Ergast-compatible)",
+      "item": [
+        {
+          "name": "Calendar - current season",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/current.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('response time under 3s', () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const mr = pm.response.json().MRData;",
+                  "pm.test('season matches current year', () => pm.expect(mr.RaceTable.season).to.eql(String(new Date().getFullYear())));",
+                  "pm.test('a full calendar is returned', () => pm.expect(mr.RaceTable.Races.length).to.be.above(15));",
+                  "pm.test('every race has name, date and circuit', () => { mr.RaceTable.Races.forEach(r => { pm.expect(r.raceName).to.be.a('string').and.not.empty; pm.expect(r.date).to.match(/^\\d{4}-\\d{2}-\\d{2}$/); pm.expect(r.Circuit.circuitName).to.be.a('string').and.not.empty; }); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver standings - leader and ordering",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/current/driverstandings.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json().MRData.StandingsTable.StandingsLists[0].DriverStandings;",
+                  "pm.test('standings are not empty', () => pm.expect(list.length).to.be.above(0));",
+                  "pm.test('P1 is labelled position 1', () => pm.expect(list[0].positionText).to.eql('1'));",
+                  "pm.test('positions are sequential', () => { list.forEach((s, i) => pm.expect(Number(s.position)).to.eql(i + 1)); });",
+                  "pm.test('points never increase down the order', () => { for (let i = 1; i < list.length; i++) pm.expect(Number(list[i].points)).to.be.at.most(Number(list[i-1].points)); });",
+                  "pm.test('every entry carries driver identity', () => list.forEach(s => { pm.expect(s.Driver.driverId).to.be.a('string').and.not.empty; pm.expect(s.Constructors.length).to.be.above(0); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Constructor standings",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/current/constructorstandings.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json().MRData.StandingsTable.StandingsLists[0].ConstructorStandings;",
+                  "pm.test('a grid of teams is returned', () => pm.expect(list.length).to.be.above(5));",
+                  "pm.test('each team has id, name and points', () => list.forEach(s => { pm.expect(s.Constructor.constructorId).to.be.a('string').and.not.empty; pm.expect(Number(s.points)).to.be.at.least(0); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Race result - fixed historical round",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/2025/1/results.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const race = pm.response.json().MRData.RaceTable.Races[0];",
+                  "pm.test('round 1 of 2025 exists', () => pm.expect(race.season).to.eql('2025'));",
+                  "pm.test('a classified field is returned', () => pm.expect(race.Results.length).to.be.at.least(18));",
+                  "pm.test('winner carries full result data', () => { const w = race.Results[0]; pm.expect(w.position).to.eql('1'); pm.expect(w.Driver.driverId).to.be.a('string').and.not.empty; pm.expect(w.Constructor.constructorId).to.be.a('string').and.not.empty; pm.expect(w.status).to.be.a('string').and.not.empty; });",
+                  "pm.test('finishing order matches array order', () => race.Results.forEach((r, i) => pm.expect(Number(r.position)).to.eql(i + 1)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagination - page one",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/2025/drivers.json?limit=1&offset=0"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const mr = pm.response.json().MRData;",
+                  "pm.test('limit is honoured', () => pm.expect(mr.DriverTable.Drivers.length).to.eql(1));",
+                  "pm.test('total is larger than the page', () => pm.expect(Number(mr.total)).to.be.above(1));",
+                  "pm.collectionVariables.set('pageOneDriver', mr.DriverTable.Drivers[0].driverId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagination - page two differs",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/2025/drivers.json?limit=1&offset=1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const driver = pm.response.json().MRData.DriverTable.Drivers[0];",
+                  "pm.test('offset returns a different record', () => pm.expect(driver.driverId).to.not.eql(pm.collectionVariables.get('pageOneDriver')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error handling - invalid season",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/abcd/drivers.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid season is rejected with 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error handling - future season returns empty data",
+          "request": {
+            "method": "GET",
+            "url": "{{jolpicaBase}}/2099/driverstandings.json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('no standings exist for a future season', () => pm.expect(pm.response.json().MRData.StandingsTable.StandingsLists.length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OpenF1",
+      "item": [
+        {
+          "name": "Race sessions of 2025",
+          "request": {
+            "method": "GET",
+            "url": "{{openf1Base}}/sessions?year=2025&session_name=Race"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('response time under 3s', () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const sessions = pm.response.json();",
+                  "pm.test('a full season of races is returned', () => pm.expect(sessions.length).to.be.above(20));",
+                  "pm.test('sessions carry meeting, circuit and date', () => sessions.forEach(s => { pm.expect(s.session_key).to.be.a('number'); pm.expect(s.circuit_short_name).to.be.a('string').and.not.empty; pm.expect(s.date_start).to.be.a('string').and.not.empty; }));",
+                  "const last = sessions.reduce((a, b) => (a.session_key > b.session_key ? a : b));",
+                  "pm.collectionVariables.set('lastRaceSession', String(last.session_key));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Drivers of the latest 2025 race (chained)",
+          "request": {
+            "method": "GET",
+            "url": "{{openf1Base}}/drivers?session_key={{lastRaceSession}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const drivers = pm.response.json();",
+                  "pm.test('a full grid took part', () => pm.expect(drivers.length).to.be.at.least(18));",
+                  "pm.test('each driver has number, name and team', () => drivers.forEach(d => { pm.expect(d.driver_number).to.be.a('number'); pm.expect(d.full_name).to.be.a('string').and.not.empty; pm.expect(d.team_name).to.be.a('string').and.not.empty; }));",
+                  "pm.collectionVariables.set('raceDriver', String(drivers[0].driver_number));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lap data for a finisher (chained)",
+          "request": {
+            "method": "GET",
+            "url": "{{openf1Base}}/laps?session_key={{lastRaceSession}}&driver_number={{raceDriver}}&lap_number=1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const laps = pm.response.json();",
+                  "pm.test('lap 1 is recorded for the chained driver', () => pm.expect(laps.length).to.be.above(0));",
+                  "pm.test('lap carries duration and sectors', () => { const lap = laps[0]; pm.expect(lap.lap_number).to.eql(1); pm.expect(lap.lap_duration).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error handling - invalid route",
+          "request": {
+            "method": "GET",
+            "url": "{{openf1Base}}/nonexistent-resource"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid route is rejected with 400', () => pm.response.to.have.status(400));",
+                  "pm.test('API names the problem', () => pm.expect(pm.response.json().detail).to.eql('Invalid route'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Empty result - 404 with explanation",
+          "request": {
+            "method": "GET",
+            "url": "{{openf1Base}}/sessions?meeting_key=1304&session_name=Race"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('valid endpoint with no matches returns 404', () => pm.response.to.have.status(404));",
+                  "pm.test('API explains the empty result', () => pm.expect(pm.response.json().detail).to.eql('No results found.'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+name: Newman API tests
+
+on:
+  push:
+    paths:
+      - "collections/**"
+      - ".github/workflows/newman.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 1" # Mondays 07:00 WIB
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Postman collection with Newman
+        run: |
+          npx -y -p newman -p newman-reporter-htmlextra \
+            newman run collections/f1-public-apis.postman_collection.json \
+            --delay-request 1200 \
+            --reporters cli,htmlextra \
+            --reporter-htmlextra-export reports/index.html
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-report
+          path: reports/
+          retention-days: 30
+      - name: Setup Pages
+        if: success()
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        if: success()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports/
+      - name: Deploy to GitHub Pages
+        if: success()
+        id: deployment
+        uses: actions/deploy-pages@v4
